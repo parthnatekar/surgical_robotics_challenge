@@ -46,6 +46,7 @@
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import TwistStamped, Vector3
+from std_msgs.msg import String
 import rospy
 import math
 from PyKDL import Rotation
@@ -60,62 +61,97 @@ class ControllerData:
     def __init__(self):
         self.left_pos = [Vector3(0.0, 0.0, 0.0)]
         self.right_pos = [Vector3(0.0, 0.0, 0.0)]
+        self.left_clutch = False
+        self.right_clutch = False
 
-robData = RobotData()
+robLeftData = RobotData()
+robRightData = RobotData()
 conData = ControllerData()
 
-def measured_js_cb(msg):
+def measured_js_cb(msg, robData):
     robData.measured_js = msg
 
-
-def measured_cp_cb(msg):
+def measured_cp_cb(msg, robData):
     robData.measured_cp = msg
 
 def measured_left_pos(msg):
-    if len(conData.left_pos) > 5:
-        conData.left_pos.pop(0)
-    conData.left_pos.append(msg)
+    if isinstance(msg, Vector3):
+        if len(conData.left_pos) > 5:
+            conData.left_pos.pop(0)
+        conData.left_pos.append(msg)
+    elif isinstance(msg, String):
+        conData.left_clutch = True if msg.data == 'True' else False
 
 def measured_right_pos(msg):
-    if len(conData.right_pos) > 5:
-        conData.right_pos.pop(0)
-    conData.right_pos.append(msg)
+    if isinstance(msg, Vector3):
+        if len(conData.right_pos) > 5:
+            conData.right_pos.pop(0)
+        conData.right_pos.append(msg)
+    elif isinstance(msg, String):
+        conData.right_clutch = True if msg.data == 'True' else False
 
 rospy.init_node("sur_chal_crtk_test")
 
 namespace = "/CRTK/"
-arm_name = "psm1"
-measured_js_name = namespace + arm_name + "/measured_js"
-measured_cp_name = namespace + arm_name + "/measured_cp"
-servo_jp_name = namespace + arm_name + "/servo_jp"
-servo_cp_name = namespace + arm_name + "/servo_cp"
+arm_1_name = "psm1"
+measured_js_1_name = namespace + arm_1_name + "/measured_js"
+measured_cp_1_name = namespace + arm_1_name + "/measured_cp"
+servo_jp_1_name = namespace + arm_1_name + "/servo_jp"
+servo_cp_1_name = namespace + arm_1_name + "/servo_cp"
+
+arm_2_name = "psm2"
+measured_js_2_name = namespace + arm_2_name + "/measured_js"
+measured_cp_2_name = namespace + arm_2_name + "/measured_cp"
+servo_jp_2_name = namespace + arm_2_name + "/servo_jp"
+servo_cp_2_name = namespace + arm_2_name + "/servo_cp"
 
 # measured_js_sub = rospy.Subscriber(
 #     measured_js_name, JointState, measured_js_cb, queue_size=1)
-measured_cp_sub = rospy.Subscriber(
-    measured_cp_name, TransformStamped, measured_cp_cb, queue_size=1)
+measured_cp_1_sub = rospy.Subscriber(
+    measured_cp_1_name, TransformStamped, measured_cp_cb, callback_args=robLeftData, queue_size=1)
+
+# measured_js_sub = rospy.Subscriber(
+#     measured_js_name, JointState, measured_js_cb, queue_size=1)
+measured_cp_2_sub = rospy.Subscriber(
+    measured_cp_2_name, TransformStamped, measured_cp_cb, callback_args=robRightData, queue_size=1)
+
+# servo_jp_pub = rospy.Publisher(servo_jp_name, JointState, queue_size=1)
+servo_cp_1_pub = rospy.Publisher(servo_cp_1_name, TransformStamped, queue_size=1)
+
+# servo_jp_pub = rospy.Publisher(servo_jp_name, JointState, queue_size=1)
+servo_cp_2_pub = rospy.Publisher(servo_cp_2_name, TransformStamped, queue_size=1)
+
 
 controller_left_sub = rospy.Subscriber(
     '/QuestControllerData/leftControllerPosition', Vector3, measured_left_pos, queue_size=1)
 controller_right_sub = rospy.Subscriber(
     '/QuestControllerData/rightControllerPosition', Vector3, measured_right_pos, queue_size=1)
+controller_left_clutch = rospy.Subscriber(
+    '/QuestControllerData/leftControllerX', String, measured_left_pos, queue_size=1)
+controller_right_clutch = rospy.Subscriber(
+    '/QuestControllerData/rightControllerX', String, measured_right_pos, queue_size=1)
 
-# servo_jp_pub = rospy.Publisher(servo_jp_name, JointState, queue_size=1)
-servo_cp_pub = rospy.Publisher(servo_cp_name, TransformStamped, queue_size=1)
-
-rate = rospy.Rate(50)
+rate = rospy.Rate(100)
 
 # servo_jp_msg = JointState()
 # servo_jp_msg.position = [0., 0., 1.0, 0., 0., 0.]
 
-servo_cp_msg = TransformStamped()
-servo_cp_msg.transform.translation.z = -1.0
+servo_cp_1_msg = TransformStamped()
+servo_cp_1_msg.transform.translation.z = -1.0
+servo_cp_2_msg = TransformStamped()
+servo_cp_2_msg.transform.translation.z = -1.0
+
 R_7_0 = Rotation.RPY(3.14, 0.0, 1.57079)
 
-servo_cp_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
-servo_cp_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
-servo_cp_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
-servo_cp_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+servo_cp_1_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
+servo_cp_1_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
+servo_cp_1_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
+servo_cp_1_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+
+servo_cp_2_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
+servo_cp_2_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
+servo_cp_2_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
+servo_cp_2_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
 
 valid_key = False
 key = None
@@ -166,7 +202,7 @@ while not rospy.is_shutdown():
         servo_cp_pub.publish(servo_cp_msg)
 
     elif key == 4:
-        if conData.left_pos[0].x == 0.:
+        if conData.left_pos[0].x == 0. or conData.right_pos[0].x == 0.:
             continue
         leftDelta = (conData.left_pos[0].x - conData.left_pos[1].x, 
             conData.left_pos[0].y - conData.left_pos[1].y,
@@ -177,9 +213,16 @@ while not rospy.is_shutdown():
             conData.right_pos[0].z - conData.right_pos[1].z)
         # conData.right_pos.pop(0)
 
-        servo_cp_msg.transform.translation.x -= leftDelta[0]*0.5
-        servo_cp_msg.transform.translation.y -= leftDelta[1]*0.5
-        servo_cp_msg.transform.translation.z += leftDelta[2]*0.5
-        servo_cp_pub.publish(servo_cp_msg)
+        if not conData.left_clutch:
+            servo_cp_1_msg.transform.translation.x -= leftDelta[0]*0.8
+            servo_cp_1_msg.transform.translation.y -= leftDelta[1]*0.8
+            servo_cp_1_msg.transform.translation.z += leftDelta[2]*0.8
+            servo_cp_1_pub.publish(servo_cp_1_msg)
+
+        if not conData.right_clutch:
+            servo_cp_2_msg.transform.translation.x -= rightDelta[0]*0.8
+            servo_cp_2_msg.transform.translation.y -= rightDelta[1]*0.8
+            servo_cp_2_msg.transform.translation.z += rightDelta[2]*0.8
+            servo_cp_2_pub.publish(servo_cp_2_msg)
 
     rate.sleep()
