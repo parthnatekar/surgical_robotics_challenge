@@ -239,6 +239,10 @@ while not rospy.is_shutdown():
             servo_cp_2_msg.transform.translation.x -= rightDelta[0]*0.5
             servo_cp_2_msg.transform.translation.y -= rightDelta[1]*0.5
             servo_cp_2_msg.transform.translation.z += rightDelta[2]*0.5
+            servo_cp_2_msg.transform.rotation.x = conData.right_rot.x
+            servo_cp_2_msg.transform.rotation.y = conData.right_rot.y
+            servo_cp_2_msg.transform.rotation.z = conData.right_rot.z
+            servo_cp_2_msg.transform.rotation.w = conData.right_rot.w
             servo_cp_2_pub.publish(servo_cp_2_msg)
 
 
