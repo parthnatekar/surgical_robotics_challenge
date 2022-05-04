@@ -51,6 +51,10 @@ import rospy
 import math
 from PyKDL import Rotation
 import numpy as np
+from scipy.spatial.transform import Rotation as sc_Rotation
+import tf
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
+# from scipy.spatial.transform import Rotation as R
 
 class RobotData:
     def __init__(self):
@@ -95,6 +99,15 @@ def measured_right_pos(msg):
         conData.right_rot = msg
     elif isinstance(msg, String):
         conData.right_clutch = True if msg.data == 'True' else False
+
+def sendTransform(position, rotation):
+    br = tf.TransformBroadcaster()
+    rot_array = np.array((rotation.x, rotation.y, rotation.z, rotation.w))
+    br.sendTransform((position.x, position.y, position.z),
+        rot_array/np.linalg.norm(rot_array),
+        rospy.Time.now(),
+        "robot_left",
+        "world")
 
 rospy.init_node("sur_chal_crtk_test")
 
@@ -226,11 +239,17 @@ while not rospy.is_shutdown():
         # conData.right_pos.pop(0)
 
         if not conData.left_clutch:
+            # corr_left_rot = euler_from_quaternion([conData.left_rot.x, conData.left_rot.y, conData.left_rot.z, conData.left_rot.w])
+            # corr_left_rot = quaternion_from_euler(corr_left_rot[2], corr_left_rot[1], corr_left_rot[0])
+            # corr_left_rot = sc_Rotation.from_euler('xyz', corr_left_rot, degrees=False).as_quat()
+            # corrected_left_rot = R.from_euler('zxy', [corrected_left_rot[0], corrected_left_rot[1], corrected_left_rot[2]], degrees=True).as_quat()
+            # print(corr_left_rot, conData.left_rot)
+            norm_factor = np.linalg.norm(np.array((conData.left_rot.x, conData.left_rot.y, conData.left_rot.z,conData.left_rot.w)))
             servo_cp_1_msg.transform.translation.x -= leftDelta[0]*0.5
             servo_cp_1_msg.transform.translation.y -= leftDelta[1]*0.5
             servo_cp_1_msg.transform.translation.z += leftDelta[2]*0.5
             servo_cp_1_msg.transform.rotation.x = conData.left_rot.x
-            servo_cp_1_msg.transform.rotation.y = conData.left_rot.y
+            servo_cp_1_msg.transform.rotation.y = -conData.left_rot.y
             servo_cp_1_msg.transform.rotation.z = conData.left_rot.z
             servo_cp_1_msg.transform.rotation.w = conData.left_rot.w
             servo_cp_1_pub.publish(servo_cp_1_msg)
@@ -240,7 +259,7 @@ while not rospy.is_shutdown():
             servo_cp_2_msg.transform.translation.y -= rightDelta[1]*0.5
             servo_cp_2_msg.transform.translation.z += rightDelta[2]*0.5
             servo_cp_2_msg.transform.rotation.x = conData.right_rot.x
-            servo_cp_2_msg.transform.rotation.y = conData.right_rot.y
+            servo_cp_2_msg.transform.rotation.y = -conData.right_rot.y
             servo_cp_2_msg.transform.rotation.z = conData.right_rot.z
             servo_cp_2_msg.transform.rotation.w = conData.right_rot.w
             servo_cp_2_pub.publish(servo_cp_2_msg)
