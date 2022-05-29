@@ -46,14 +46,14 @@
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import TwistStamped, Vector3, Quaternion
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 import rospy
 import math
 from PyKDL import Rotation
 import numpy as np
 from scipy.spatial.transform import Rotation as sc_Rotation
 import tf
-from tf.transformations import euler_from_quaternion, quaternion_from_euler
+from tf.transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix, quaternion_from_matrix
 # from scipy.spatial.transform import Rotation as R
 
 class RobotData:
@@ -69,6 +69,8 @@ class ControllerData:
         self.right_rot = Quaternion(0.0, 0.0, 0.0, 0.0)
         self.left_clutch = False
         self.right_clutch = False
+        self.left_jaw = 0.0
+        self.right_jaw = 0.0
 
 robLeftData = RobotData()
 robRightData = RobotData()
@@ -89,6 +91,8 @@ def measured_left_pos(msg):
         conData.left_rot = msg
     elif isinstance(msg, String):
         conData.left_clutch = True if msg.data == 'True' else False
+    elif isinstance(msg, Float32):
+        conData.left_jaw = 1-msg.data
 
 def measured_right_pos(msg):
     if isinstance(msg, Vector3):
@@ -99,14 +103,16 @@ def measured_right_pos(msg):
         conData.right_rot = msg
     elif isinstance(msg, String):
         conData.right_clutch = True if msg.data == 'True' else False
+    elif isinstance(msg, Float32):
+        conData.right_jaw = 1-msg.data
 
 def sendTransform(position, rotation):
     br = tf.TransformBroadcaster()
-    rot_array = np.array((rotation.x, rotation.y, rotation.z, rotation.w))
+    rot_array = np.array((rotation[0], rotation[1], rotation[2], rotation[3]))
     br.sendTransform((position.x, position.y, position.z),
         rot_array/np.linalg.norm(rot_array),
         rospy.Time.now(),
-        "robot_left",
+        "robot_left_pre_ik",
         "world")
 
 rospy.init_node("sur_chal_crtk_test")
@@ -116,12 +122,14 @@ arm_1_name = "psm1"
 measured_js_1_name = namespace + arm_1_name + "/measured_js"
 measured_cp_1_name = namespace + arm_1_name + "/measured_cp"
 servo_jp_1_name = namespace + arm_1_name + "/servo_jp"
+servo_jp_1_jaw_name = namespace + arm_1_name + "/jaw/servo_jp"
 servo_cp_1_name = namespace + arm_1_name + "/servo_cp"
 
 arm_2_name = "psm2"
 measured_js_2_name = namespace + arm_2_name + "/measured_js"
 measured_cp_2_name = namespace + arm_2_name + "/measured_cp"
 servo_jp_2_name = namespace + arm_2_name + "/servo_jp"
+servo_jp_2_jaw_name = namespace + arm_2_name + "/jaw/servo_jp"
 servo_cp_2_name = namespace + arm_2_name + "/servo_cp"
 
 # measured_js_1_sub = rospy.Subscriber(
@@ -134,10 +142,10 @@ measured_cp_1_sub = rospy.Subscriber(
 measured_cp_2_sub = rospy.Subscriber(
     measured_cp_2_name, TransformStamped, measured_cp_cb, callback_args=robRightData, queue_size=1)
 
-# servo_jp_1_pub = rospy.Publisher(servo_jp_1_name, JointState, queue_size=1)
+servo_jp_1_pub = rospy.Publisher(servo_jp_1_jaw_name, JointState, queue_size=1)
 servo_cp_1_pub = rospy.Publisher(servo_cp_1_name, TransformStamped, queue_size=1)
 
-# servo_jp_1_pub = rospy.Publisher(servo_jp_1_name, JointState, queue_size=1)
+servo_jp_2_pub = rospy.Publisher(servo_jp_2_jaw_name, JointState, queue_size=1)
 servo_cp_2_pub = rospy.Publisher(servo_cp_2_name, TransformStamped, queue_size=1)
 
 
@@ -153,6 +161,12 @@ controller_left_clutch = rospy.Subscriber(
     '/QuestControllerData/leftControllerRotation', Quaternion, measured_left_pos, queue_size=1)
 controller_right_clutch = rospy.Subscriber(
     '/QuestControllerData/rightControllerRotation', Quaternion, measured_right_pos, queue_size=1)
+controller_left_jaw = rospy.Subscriber(
+    '/QuestControllerData/leftControllerJaw', Float32, measured_left_pos, queue_size=1)
+controller_right_jaw = rospy.Subscriber(
+    '/QuestControllerData/rightControllerJaw', Float32, measured_right_pos, queue_size=1)
+
+
 
 rate = rospy.Rate(100)
 
@@ -160,6 +174,11 @@ rate = rospy.Rate(100)
 # servo_jp_1_msg.position = [0., 0., 1.0, 0., 0., 0.]
 # servo_jp_2_msg = JointState()
 # servo_jp_2_msg.position = [0., 0., 1.0, 0., 0., 0.]
+
+servo_jp_1_msg = JointState()
+servo_jp_1_msg.position = [0.]
+servo_jp_2_msg = JointState()
+servo_jp_2_msg.position = [0.]
 
 servo_cp_1_msg = TransformStamped()
 servo_cp_1_msg.transform.translation.z = -1.0
@@ -177,6 +196,13 @@ servo_cp_2_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
 servo_cp_2_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
 servo_cp_2_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
 servo_cp_2_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+
+temp = TransformStamped()
+temp.transform.rotation.x = R_7_0.GetQuaternion()[0]
+temp.transform.rotation.y = R_7_0.GetQuaternion()[1]
+temp.transform.rotation.z = R_7_0.GetQuaternion()[2]
+temp.transform.rotation.w = R_7_0.GetQuaternion()[3]
+
 
 valid_key = False
 key = None
@@ -238,31 +264,49 @@ while not rospy.is_shutdown():
             conData.right_pos[0].z - conData.right_pos[1].z)
         # conData.right_pos.pop(0)
 
+        # print(conData.left_jaw)
+        motion_factor = 0.2
+
         if not conData.left_clutch:
             # corr_left_rot = euler_from_quaternion([conData.left_rot.x, conData.left_rot.y, conData.left_rot.z, conData.left_rot.w])
             # corr_left_rot = quaternion_from_euler(corr_left_rot[2], corr_left_rot[1], corr_left_rot[0])
             # corr_left_rot = sc_Rotation.from_euler('xyz', corr_left_rot, degrees=False).as_quat()
             # corrected_left_rot = R.from_euler('zxy', [corrected_left_rot[0], corrected_left_rot[1], corrected_left_rot[2]], degrees=True).as_quat()
             # print(corr_left_rot, conData.left_rot)
-            norm_factor = np.linalg.norm(np.array((conData.left_rot.x, conData.left_rot.y, conData.left_rot.z,conData.left_rot.w)))
-            servo_cp_1_msg.transform.translation.x -= leftDelta[0]*0.5
-            servo_cp_1_msg.transform.translation.y -= leftDelta[1]*0.5
-            servo_cp_1_msg.transform.translation.z += leftDelta[2]*0.5
-            servo_cp_1_msg.transform.rotation.x = conData.left_rot.x
-            servo_cp_1_msg.transform.rotation.y = -conData.left_rot.y
-            servo_cp_1_msg.transform.rotation.z = conData.left_rot.z
-            servo_cp_1_msg.transform.rotation.w = conData.left_rot.w
+            # print(servo_cp_1_msg.transform.rotation)
+            rot_matrix = quaternion_matrix([conData.left_rot.x, conData.left_rot.y, 
+                conData.left_rot.z, conData.left_rot.w])
+            # rot_matrix = quaternion_matrix([temp.transform.rotation.x, temp.transform.rotation.y, 
+            #     temp.transform.rotation.z, temp.transform.rotation.w])
+            rot_matrix = rot_matrix @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -    1, 0], [0, 0, 0, 1]])
+            rot_quat = quaternion_from_matrix(rot_matrix)
+            # norm_factor = np.linalg.norm(np.array((conData.left_rot.x, conData.left_rot.y, conData.left_rot.z,conData.left_rot.w)))
+            servo_cp_1_msg.transform.translation.x -= leftDelta[0]*motion_factor
+            servo_cp_1_msg.transform.translation.y -= leftDelta[1]*motion_factor
+            servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
+            servo_cp_1_msg.transform.rotation.x = -rot_quat[0]
+            servo_cp_1_msg.transform.rotation.y = -rot_quat[1]
+            servo_cp_1_msg.transform.rotation.z = rot_quat[2]
+            servo_cp_1_msg.transform.rotation.w = rot_quat[3]
+            servo_jp_1_msg.position = [conData.left_jaw]
             servo_cp_1_pub.publish(servo_cp_1_msg)
+            sendTransform(servo_cp_1_msg.transform.translation, rot_quat)
+            servo_jp_1_pub.publish(servo_jp_1_msg)
 
         if not conData.right_clutch:
-            servo_cp_2_msg.transform.translation.x -= rightDelta[0]*0.5
-            servo_cp_2_msg.transform.translation.y -= rightDelta[1]*0.5
-            servo_cp_2_msg.transform.translation.z += rightDelta[2]*0.5
-            servo_cp_2_msg.transform.rotation.x = conData.right_rot.x
-            servo_cp_2_msg.transform.rotation.y = -conData.right_rot.y
-            servo_cp_2_msg.transform.rotation.z = conData.right_rot.z
-            servo_cp_2_msg.transform.rotation.w = conData.right_rot.w
+            rot_matrix = quaternion_matrix([conData.right_rot.x, conData.right_rot.y, 
+                conData.right_rot.z, conData.right_rot.w])            
+            rot_matrix = rot_matrix @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+            rot_quat = quaternion_from_matrix(rot_matrix)
+            servo_cp_2_msg.transform.translation.x -= rightDelta[0]*motion_factor
+            servo_cp_2_msg.transform.translation.y -= rightDelta[1]*motion_factor
+            servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor
+            servo_cp_2_msg.transform.rotation.x = -rot_quat[0]
+            servo_cp_2_msg.transform.rotation.y = -rot_quat[1]
+            servo_cp_2_msg.transform.rotation.z = rot_quat[2]
+            servo_cp_2_msg.transform.rotation.w = rot_quat[3]
+            servo_jp_2_msg.position = [conData.right_jaw]
             servo_cp_2_pub.publish(servo_cp_2_msg)
-
+            servo_jp_2_pub.publish(servo_jp_2_msg)
 
     rate.sleep() 
