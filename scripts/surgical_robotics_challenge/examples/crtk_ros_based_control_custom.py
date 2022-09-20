@@ -43,7 +43,7 @@
 # */
 # //==============================================================================
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import TwistStamped, Vector3, Quaternion
 from std_msgs.msg import String, Float32
@@ -59,7 +59,7 @@ from tf.transformations import euler_from_quaternion, quaternion_from_euler, qua
 class RobotData:
     def __init__(self):
         self.measured_js = JointState()
-        self.measured_cp = TransformStamped()
+        self.measured_cp = PoseStamped()
 
 class ControllerData:
     def __init__(self):
@@ -135,18 +135,18 @@ servo_cp_2_name = namespace + arm_2_name + "/servo_cp"
 # measured_js_1_sub = rospy.Subscriber(
 #     measured_js_1_name, JointState, measured_js_cb, callback_args=robLeftData, queue_size=1)
 measured_cp_1_sub = rospy.Subscriber(
-    measured_cp_1_name, TransformStamped, measured_cp_cb, callback_args=robLeftData, queue_size=1)
+    measured_cp_1_name, PoseStamped, measured_cp_cb, callback_args=robLeftData, queue_size=1)
 
 # measured_js_2_sub = rospy.Subscriber(
 #     measured_js_2_name, JointState, measured_js_cb, callback_args=robRightData, queue_size=1)
 measured_cp_2_sub = rospy.Subscriber(
-    measured_cp_2_name, TransformStamped, measured_cp_cb, callback_args=robRightData, queue_size=1)
+    measured_cp_2_name, PoseStamped, measured_cp_cb, callback_args=robRightData, queue_size=1)
 
 servo_jp_1_pub = rospy.Publisher(servo_jp_1_jaw_name, JointState, queue_size=1)
-servo_cp_1_pub = rospy.Publisher(servo_cp_1_name, TransformStamped, queue_size=1)
+servo_cp_1_pub = rospy.Publisher(servo_cp_1_name, PoseStamped, queue_size=1)
 
 servo_jp_2_pub = rospy.Publisher(servo_jp_2_jaw_name, JointState, queue_size=1)
-servo_cp_2_pub = rospy.Publisher(servo_cp_2_name, TransformStamped, queue_size=1)
+servo_cp_2_pub = rospy.Publisher(servo_cp_2_name, PoseStamped, queue_size=1)
 
 
 controller_left_sub = rospy.Subscriber(
@@ -180,28 +180,28 @@ servo_jp_1_msg.position = [0.]
 servo_jp_2_msg = JointState()
 servo_jp_2_msg.position = [0.]
 
-servo_cp_1_msg = TransformStamped()
-servo_cp_1_msg.transform.translation.z = -1.0
-servo_cp_2_msg = TransformStamped()
-servo_cp_2_msg.transform.translation.z = -1.0
+servo_cp_1_msg = PoseStamped()
+servo_cp_1_msg.pose.position.z = -1.0
+servo_cp_2_msg = PoseStamped()
+servo_cp_2_msg.pose.position.z = -1.0
 
 R_7_0 = Rotation.RPY(3.14, 0.0, 1.57079)
 
-servo_cp_1_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
-servo_cp_1_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
-servo_cp_1_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
-servo_cp_1_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+servo_cp_1_msg.pose.orientation.x = R_7_0.GetQuaternion()[0]
+servo_cp_1_msg.pose.orientation.y = R_7_0.GetQuaternion()[1]
+servo_cp_1_msg.pose.orientation.z = R_7_0.GetQuaternion()[2]
+servo_cp_1_msg.pose.orientation.w = R_7_0.GetQuaternion()[3]
 
-servo_cp_2_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
-servo_cp_2_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
-servo_cp_2_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
-servo_cp_2_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+servo_cp_2_msg.pose.orientation.x = R_7_0.GetQuaternion()[0]
+servo_cp_2_msg.pose.orientation.y = R_7_0.GetQuaternion()[1]
+servo_cp_2_msg.pose.orientation.z = R_7_0.GetQuaternion()[2]
+servo_cp_2_msg.pose.orientation.w = R_7_0.GetQuaternion()[3]
 
-temp = TransformStamped()
-temp.transform.rotation.x = R_7_0.GetQuaternion()[0]
-temp.transform.rotation.y = R_7_0.GetQuaternion()[1]
-temp.transform.rotation.z = R_7_0.GetQuaternion()[2]
-temp.transform.rotation.w = R_7_0.GetQuaternion()[3]
+temp = PoseStamped()
+temp.pose.orientation.x = R_7_0.GetQuaternion()[0]
+temp.pose.orientation.y = R_7_0.GetQuaternion()[1]
+temp.pose.orientation.z = R_7_0.GetQuaternion()[2]
+temp.pose.orientation.w = R_7_0.GetQuaternion()[3]
 
 
 valid_key = False
@@ -246,11 +246,9 @@ while not rospy.is_shutdown():
     # ######
     # The following 3 lines move the robot in cartesian space in sinusoidal fashion
     elif key == 3:
-        servo_cp_msg.transform.translation.x = 0.2 * \
-            math.sin(rospy.Time.now().to_sec())
-        servo_cp_msg.transform.translation.y = 0.2 * \
+        servo_cp_1_msg.pose.orientation.y = 0.2 * \
             math.cos(rospy.Time.now().to_sec())
-        servo_cp_pub.publish(servo_cp_msg)
+        servo_cp_1_pub.publish(servo_cp_1_msg)
 
     elif key == 4:
         if conData.left_pos[0].x == 0. or conData.right_pos[0].x == 0.:
