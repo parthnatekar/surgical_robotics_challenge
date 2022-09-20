@@ -260,7 +260,7 @@ while not rospy.is_shutdown():
     elif key == 3:
         # servo_cp_1_msg.transform.translation.x = 0.8 * \
         #     math.sin(rospy.Time.now().to_sec())
-        servo_cp_1_msg.transform.translation.y = 0.2 * \
+        servo_cp_1_msg.transform.translation.y = 0.8 * \
             math.cos(rospy.Time.now().to_sec())
         servo_cp_1_pub.publish(servo_cp_1_msg)
         sentRot = np.array([servo_cp_1_msg.transform.rotation.x, servo_cp_1_msg.transform.rotation.y,servo_cp_1_msg.transform.rotation.z,

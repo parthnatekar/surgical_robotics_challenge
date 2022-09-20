@@ -108,6 +108,8 @@ class PSMCRTKWrapper:
 
         self.measured_js_pub = rospy.Publisher(namespace + '/' + name + '/' + 'measured_js', JointState,
                                                queue_size=1)
+        self.ik_js_pub = rospy.Publisher(namespace + '/' + name + '/' + 'ik_js', JointState,
+                                               queue_size=1)
 
         self.measured_cp_pub = rospy.Publisher(namespace + '/' + name + '/' + 'measured_cp', TransformStamped,
                                                queue_size=1)
@@ -130,6 +132,9 @@ class PSMCRTKWrapper:
         self._measured_js_msg = JointState()
         self._measured_js_msg.name = self.arm.get_joint_names()
 
+        self._ik_js_msg = JointState()
+        self._ik_js_msg.name = self.arm.get_joint_names()
+
         self._measured_cp_msg = TransformStamped()
         self._measured_cp_msg.header.frame_id = 'baselink'
         self._jaw_angle = 0.5
@@ -150,7 +155,12 @@ class PSMCRTKWrapper:
     def publish_js(self):
         self._measured_js_msg.position = self.arm.measured_jp()
         self._measured_js_msg.velocity = self.arm.measured_jv()
+        self._measured_js_msg.header.stamp = rospy.Time.now()
         self.measured_js_pub.publish(self._measured_js_msg)
+
+        self._ik_js_msg.position = self.arm._ik_solution
+        self._ik_js_msg.header.stamp = rospy.Time.now()
+        self.ik_js_pub.publish(self._ik_js_msg)
 
         # Set jaw angle and run grasp logic
         self.arm.set_jaw_angle(self._jaw_angle)
