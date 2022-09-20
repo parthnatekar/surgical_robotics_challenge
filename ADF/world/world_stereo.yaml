@@ -42,7 +42,7 @@ light3:
 cameraL:
   namespace: cameras/
   name: cameraL
-  location: {x: -0.02, y: 0.0, z: -0.5}
+  location: {x: -0.02, y: 0.0, z: 0.}
   look at: {x: 0.0, y: 0.0, z: -1.0}
   up: {x: 0.0, y: 1.0, z: 0.0}
   clipping plane: {near: 0.01, far: 10.0}
@@ -53,9 +53,9 @@ cameraL:
   #   path: ../../ambf_shaders/preprocessing
   #   vertex: shader.vs
   #   fragment: shader.fs
-  # publish image: True
-  publish image interval: 5
-  publish image resolution: {width: 1920, height: 1080}
+  publish image: True
+  publish image interval: 1
+  publish image resolution: {width: 960, height: 540}
   # publish depth: True
   # publish depth resolution: {width: 640, height: 480}
   # multipass: True
@@ -63,7 +63,7 @@ cameraL:
 cameraR:
   namespace: cameras/
   name: cameraR
-  location: {x: 0.02, y: 0.0, z: -0.5}
+  location: {x: 0.02, y: 0.0, z: 0.}
   look at: {x: 0.0, y: 0.0, z: -1.0}
   up: {x: 0.0, y: 1.0, z: 0.0}
   clipping plane: {near: 0.01, far: 10.0}
@@ -74,9 +74,9 @@ cameraR:
   #   path: ../../ambf_shaders/preprocessing
   #   vertex: shader.vs
   #   fragment: shader.fs
-  # publish image: True
-  publish image interval: 5
-  publish image resolution: {width: 1920, height: 1080}
+  publish image: True
+  publish image interval: 1
+  publish image resolution: {width: 960, height: 540}
   # publish depth: True
   # publish depth resolution: {width: 640, height: 480}
   # multipass: True

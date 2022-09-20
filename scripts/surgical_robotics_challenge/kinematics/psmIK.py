@@ -48,6 +48,7 @@ import numpy as np
 import math
 from surgical_robotics_challenge.kinematics.psmFK import *
 import rospy
+import tf
 
 # THIS IS THE IK FOR THE PSM MOUNTED WITH THE LARGE NEEDLE DRIVER TOOL. THIS IS THE
 # SAME KINEMATIC CONFIGURATION FOUND IN THE DVRK MANUAL. NOTE, JUST LIKE A FAULT IN THE
@@ -115,8 +116,21 @@ def enforce_limits(j_raw):
 
     return [j_limited[0], j_limited[1], j_limited[2], j_limited[3], j_limited[4], j_limited[5]]
 
+def sendTransform(position, rotation, frame_label = "robot_left_ik"):
+    br = tf.TransformBroadcaster()
+    position = np.squeeze(position)
+    rot_array = np.array(tf.transformations.quaternion_from_matrix(rotation))
+    br.sendTransform((position[0, 0], position[0, 1], position[0, 2]), 
+        rot_array/np.linalg.norm(rot_array),
+        rospy.Time.now(),
+        frame_label,
+        "world")
 
 def compute_IK(T_7_0):
+
+    # T_7_0.M.DoRotX(180)
+    # T_7_0.M.DoRotY(180)
+
     pkd = PSMKinematicData()
 
     # Pinch Joint
@@ -222,11 +236,20 @@ def compute_IK(T_7_0):
     # print("Joint 5: ", round(j5, 3))
     # print("Joint 6: ", round(j6, 3))
 
-    # T_7_0_req = convert_frame_to_mat(T_7_0)
-    # T_7_0_req = round_transform(T_7_0_req, 3)
+    T_7_0_req = convert_frame_to_mat(T_7_0)
+    T_7_0_req = round_transform(T_7_0_req, 3)
+
+    # print(T_7_0_req)
     # print('Requested Pose: \n', T_7_0_req)
-    # T_7_0_computed = compute_FK([j1, j2, j3, j4, j5, j6, 0])
+    # print([j1, j2, j3, j4, j5, j6, 0])
+    T_7_0_computed = compute_FK([j1, j2, j3, j4, j5, j6])
     # round_transform(T_7_0_computed, 3)
+    # print(T_7_0_computed[3:, :3])
+    # sendTransform(T_7_0_computed[:3, 3], T_7_0_computed)
     # print('Computed Pose: \n', T_7_0_computed)
 
+    # IK Solution HERE is CORRECT, Check RVIZ. What is happening after?
+    # Pass last joint 0. as in FK, try again
+
+    # print(T_7_0_computed[:3, 3])
     return [j1, j2, j3, j4, j5, j6]

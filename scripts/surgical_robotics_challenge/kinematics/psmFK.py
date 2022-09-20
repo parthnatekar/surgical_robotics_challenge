@@ -63,14 +63,14 @@ from surgical_robotics_challenge.kinematics.DH import *
 # You need to provide a list of joint positions. If the list is less that the number of joint
 # i.e. the robot has 6 joints, but only provide 3 joints. The FK till the 3+1 link will be provided
 
-class PSMKinematicData:
+class PSMKinematicData: 
     def __init__(self):
         self.num_links = 7
 
         self.L_rcc = 4.389  # From dVRK documentation x 10
         self.L_tool = 4.16  # From dVRK documentation x 10
         self.L_pitch2yaw = 0.09  # Fixed length from the palm joint to the pinch joint
-        self.L_yaw2ctrlpnt = 0.106  # Fixed length from the pinch joint to the pinch tip
+        self.L_yaw2ctrlpnt = 0.  # Fixed length from the pinch joint to the pinch tip
         # Delta between tool tip and the Remote Center of Motion
         self.L_tool2rcm_offset = 0.229
 
@@ -101,7 +101,7 @@ class PSMKinematicData:
 kinematics_data = PSMKinematicData()
 
 
-def compute_FK(joint_pos, up_to_link):
+def compute_FK(joint_pos, up_to_link=7):
     if up_to_link > kinematics_data.num_links:
         raise "ERROR! COMPUTE FK UP_TO_LINK GREATER THAN DOF"
     j = [0, 0, 0, 0, 0, 0, 0]

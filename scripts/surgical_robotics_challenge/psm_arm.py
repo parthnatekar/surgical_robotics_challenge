@@ -47,6 +47,18 @@ from PyKDL import Frame, Rotation, Vector
 import time
 from surgical_robotics_challenge.utils.joint_pos_recorder import JointPosRecorder
 from surgical_robotics_challenge.utils.joint_errors_model import JointErrorsModel
+from surgical_robotics_challenge.kinematics.psmFK import compute_FK
+import tf
+
+def sendTransform(position, rotation, frame_label = "robot_left_post_fk"):
+    br = tf.TransformBroadcaster()
+    position = np.squeeze(position)
+    rot_array = np.array(tf.transformations.quaternion_from_matrix(rotation))
+    br.sendTransform((position[0, 0], position[0, 1], position[0, 2]), 
+        rot_array/np.linalg.norm(rot_array),
+        rospy.Time.now(),
+        frame_label,
+        "world")
 
 jpRecorder = JointPosRecorder()
 
@@ -157,10 +169,13 @@ class PSM:
     def servo_cp(self, T_t_b):
         if type(T_t_b) in [np.matrix, np.array]:
             T_t_b = convert_mat_to_frame(T_t_b)
-
+        
         ik_solution = compute_IK(T_t_b)
         self._ik_solution = enforce_limits(ik_solution)
-        self.servo_jp(self._ik_solution)
+        T_7_0_computed = compute_FK(self._ik_solution + [0.])
+        sendTransform(T_7_0_computed[:3, 3], T_7_0_computed)
+        self.servo_jp(ik_solution)
+        # print(T_t_b.p, self._ik_solution[0])
 
         ###  save jp
 
@@ -175,7 +190,9 @@ class PSM:
         pass
 
     def servo_jp(self, jp):
+        # print(self.base.get_joint_names())
         jp = self._joint_error_model.add_to_joints(jp, self._joints_error_mask)
+        # self.base.set_multiple_joint_pos(jp, [0, 1, 2, 3, 4, 5])
         self.base.set_joint_pos(0, jp[0])
         self.base.set_joint_pos(1, jp[1])
         self.base.set_joint_pos(2, jp[2])
