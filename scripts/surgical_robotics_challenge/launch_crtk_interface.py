@@ -377,7 +377,7 @@ if __name__ == "__main__":
     options.run_psm_two = get_boolean_from_opt(parsed_args.run_psm_two)
     options.run_psm_three = get_boolean_from_opt(parsed_args.run_psm_three)
     options.run_ecm = get_boolean_from_opt(parsed_args.run_ecm)
-    options.run_scene = get_boolean_from_opt(parsed_args.run_scene)
+    options.run_scene = False
 
     options.namespace = parsed_args.namespace
     options.rate = parsed_args.rate

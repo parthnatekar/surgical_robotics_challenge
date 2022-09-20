@@ -260,8 +260,15 @@ while not rospy.is_shutdown():
     elif key == 3:
         # servo_cp_1_msg.transform.translation.x = 0.8 * \
         #     math.sin(rospy.Time.now().to_sec())
-        servo_cp_1_msg.transform.translation.y = 0.8 * \
+        sinusoidal_x = 0.8 * \
             math.cos(rospy.Time.now().to_sec())
+        p_c = np.array([sinusoidal_x, 0., -1.])
+        T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
+        p_e = T_ec @ p_c
+        servo_cp_1_msg.transform.translation.x = p_e[0]
+        servo_cp_1_msg.transform.translation.y = p_e[1]
+        servo_cp_1_msg.transform.translation.z = p_e[2]
+        
         servo_cp_1_pub.publish(servo_cp_1_msg)
         sentRot = np.array([servo_cp_1_msg.transform.rotation.x, servo_cp_1_msg.transform.rotation.y,servo_cp_1_msg.transform.rotation.z,
                                servo_cp_1_msg.transform.rotation.w])
@@ -307,6 +314,7 @@ while not rospy.is_shutdown():
                     current_robot_pose.z, current_robot_pose.w])
             
             pre_transform = current_robot_pose @ np.linalg.inv(declutched_pose)
+            T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
 
             # print('Oculus', rot_matrix, '\n Robot', current_robot_pose)
             # corr_left_rot = euler_from_quaternion([conData.left_rot.x, conData.left_rot.y, conData.left_rot.z, conData.left_rot.w])
@@ -318,7 +326,7 @@ while not rospy.is_shutdown():
             # rot_matrix = quaternion_matrix([temp.transform.rotation.x, temp.transform.rotation.y, 
             #     temp.transform.rotation.z, temp.transform.rotation.w])
             rot_quat = quaternion_from_matrix(rot_matrix)
-            print(robLeftData.measured_cp.transform.translation)
+            leftDelta = T_ec @ np.array(leftDelta)
             # norm_factor = np.linalg.norm(np.array((conData.left_rot.x, conData.left_rot.y, conData.left_rot.z,conData.left_rot.w)))
             servo_cp_1_msg.transform.translation.x -= leftDelta[0]*motion_factor
             servo_cp_1_msg.transform.translation.y -= leftDelta[1]*motion_factor
