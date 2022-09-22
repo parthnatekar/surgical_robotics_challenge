@@ -149,6 +149,8 @@ servo_cp_1_pub = rospy.Publisher(servo_cp_1_name, TransformStamped, queue_size=1
 servo_jp_2_pub = rospy.Publisher(servo_jp_2_jaw_name, JointState, queue_size=1)
 servo_cp_2_pub = rospy.Publisher(servo_cp_2_name, TransformStamped, queue_size=1)
 
+servo_jaw_1_pub = rospy.Publisher(servo_jp_1_jaw_name, JointState, queue_size=1)
+servo_jaw_2_pub = rospy.Publisher(servo_jp_2_jaw_name, JointState, queue_size=1)
 
 controller_left_sub = rospy.Subscriber(
     '/QuestControllerData/leftControllerPosition', Vector3, measured_left_pos, queue_size=1)
@@ -167,8 +169,6 @@ controller_left_jaw = rospy.Subscriber(
 controller_right_jaw = rospy.Subscriber(
     '/QuestControllerData/rightControllerJaw', Float32, measured_right_pos, queue_size=1)
 
-
-
 rate = rospy.Rate(100)
 
 servo_jp_1_msg = JointState()
@@ -176,10 +176,10 @@ servo_jp_1_msg.position = [0., 0., 1., 0., 0., 0.]
 servo_jp_2_msg = JointState()
 servo_jp_2_msg.position = [0., 0., 1., 0., 0., 0.]
 
-# servo_jp_1_msg = JointState()
-# servo_jp_1_msg.position = [0.]
-# servo_jp_2_msg = JointState()
-# servo_jp_2_msg.position = [0.]
+servo_jaw_1_msg = JointState()
+servo_jaw_1_msg.position = [0.]
+servo_jaw_2_msg = JointState()
+servo_jaw_2_msg.position = [0.]
 
 servo_cp_1_msg = TransformStamped()
 servo_cp_1_msg.transform.translation.z = -1.0
@@ -203,8 +203,12 @@ temp.transform.rotation.x = R_7_0.GetQuaternion()[0]
 temp.transform.rotation.y = R_7_0.GetQuaternion()[1]
 temp.transform.rotation.z = R_7_0.GetQuaternion()[2]
 temp.transform.rotation.w = R_7_0.GetQuaternion()[3]
-declutched_pose = None
-
+declutched_pose_left = None
+declutched_pose_right = None
+has_clutched_left = False
+has_clutched_right = False
+pre_transform_left = np.eye(4)
+pre_transform_right = np.eye(4)
 
 valid_key = False
 key = None
@@ -262,14 +266,23 @@ while not rospy.is_shutdown():
         #     math.sin(rospy.Time.now().to_sec())
         sinusoidal_x = 0.8 * \
             math.cos(rospy.Time.now().to_sec())
-        p_c = np.array([sinusoidal_x, 0., -1.])
+        p_c = np.array([0, sinusoidal_x, -1.])
         T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
         p_e = T_ec @ p_c
         servo_cp_1_msg.transform.translation.x = p_e[0]
         servo_cp_1_msg.transform.translation.y = p_e[1]
         servo_cp_1_msg.transform.translation.z = p_e[2]
-        
+
+        # (pi, 0, pi/2 is the neutral position. All other angles have to be
+        # with respect to this?)
+        R_7_0 = Rotation.RPY(3.14, 0, 1.57)
+        servo_cp_1_msg.transform.rotation.x = R_7_0.GetQuaternion()[0]
+        servo_cp_1_msg.transform.rotation.y = R_7_0.GetQuaternion()[1]
+        servo_cp_1_msg.transform.rotation.z = R_7_0.GetQuaternion()[2]
+        servo_cp_1_msg.transform.rotation.w = R_7_0.GetQuaternion()[3]
+
         servo_cp_1_pub.publish(servo_cp_1_msg)
+
         sentRot = np.array([servo_cp_1_msg.transform.rotation.x, servo_cp_1_msg.transform.rotation.y,servo_cp_1_msg.transform.rotation.z,
                                servo_cp_1_msg.transform.rotation.w])
         # sendTransform(servo_cp_1_msg.transform.translation, sentRot)
@@ -297,59 +310,65 @@ while not rospy.is_shutdown():
         # conData.right_pos.pop(0)
 
         # print(conData.left_jaw)
-        motion_factor = 0.2
+        motion_factor = 0.5
 
         if not conData.left_clutch:
             rot_matrix_original = quaternion_matrix([-conData.left_rot.x, -conData.left_rot.y, 
                 conData.left_rot.z, conData.left_rot.w])
-            # rot_matrix = quaternion_matrix([temp.transform.rotation.x, temp.transform.rotation.y, 
-            #     temp.transform.rotation.z, temp.transform.rotation.w])
-            rot_matrix = rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-            
-            if declutched_pose is None:
-                declutched_pose = rot_matrix
-
-            current_robot_pose = robLeftData.measured_cp.transform.rotation
-            current_robot_pose = quaternion_matrix([current_robot_pose.x, current_robot_pose.y,
-                    current_robot_pose.z, current_robot_pose.w])
-            
-            pre_transform = current_robot_pose @ np.linalg.inv(declutched_pose)
             T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
-
-            # print('Oculus', rot_matrix, '\n Robot', current_robot_pose)
-            # corr_left_rot = euler_from_quaternion([conData.left_rot.x, conData.left_rot.y, conData.left_rot.z, conData.left_rot.w])
-            # corr_left_rot = quaternion_from_euler(corr_left_rot[2], corr_left_rot[1], corr_left_rot[0])
-            # corr_left_rot = sc_Rotation.from_euler('xyz', corr_left_rot, degrees=False).as_quat()
-            # corrected_left_rot = R.from_euler('zxy', [corrected_left_rot[0], corrected_left_rot[1], corrected_left_rot[2]], degrees=True).as_quat()
-            # print(corr_left_rot, conData.left_rot)
-            # print(servo_cp_1_msg.transform.rotation)
-            # rot_matrix = quaternion_matrix([temp.transform.rotation.x, temp.transform.rotation.y, 
-            #     temp.transform.rotation.z, temp.transform.rotation.w])
+            T_ec_h = np.eye(4)
+            T_ec_h[:3, :3] = T_ec
+            rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+            
+            if declutched_pose_left is None and has_clutched_left == True:
+                declutched_pose_left = rot_matrix
+                current_robot_pose = robLeftData.measured_cp.transform.rotation
+                current_robot_pose = quaternion_matrix([current_robot_pose.x, current_robot_pose.y,
+                        current_robot_pose.z, current_robot_pose.w])
+                pre_transform_left = current_robot_pose @ np.linalg.inv(declutched_pose_left)
+            
+            rot_matrix = pre_transform_left @ rot_matrix
             rot_quat = quaternion_from_matrix(rot_matrix)
             leftDelta = T_ec @ np.array(leftDelta)
-            # norm_factor = np.linalg.norm(np.array((conData.left_rot.x, conData.left_rot.y, conData.left_rot.z,conData.left_rot.w)))
             servo_cp_1_msg.transform.translation.x -= leftDelta[0]*motion_factor
             servo_cp_1_msg.transform.translation.y -= leftDelta[1]*motion_factor
             servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
-            # servo_cp_1_msg.transform.rotation.x = rot_quat[0]
-            # servo_cp_1_msg.transform.rotation.y = rot_quat[1]
-            # servo_cp_1_msg.transform.rotation.z = rot_quat[2]
-            # servo_cp_1_msg.transform.rotation.w = rot_quat[3]
-            # servo_jp_1_msg.position = [conData.left_jaw]
+            servo_cp_1_msg.transform.rotation.x = rot_quat[0]
+            servo_cp_1_msg.transform.rotation.y = rot_quat[1]
+            servo_cp_1_msg.transform.rotation.z = rot_quat[2]
+            servo_cp_1_msg.transform.rotation.w = rot_quat[3]
+            servo_jaw_1_msg.position = [conData.left_jaw]
             servo_cp_1_pub.publish(servo_cp_1_msg)
-            # sendTransform(robLeftData.measured_cp.transform.translation)
             robRot = np.array([robLeftData.measured_cp.transform.rotation.x, robLeftData.measured_cp.transform.rotation.y, robLeftData.measured_cp.transform.rotation.z,
                                robLeftData.measured_cp.transform.rotation.w])
             sendTransform(robLeftData.measured_cp.transform.translation, robRot, 'robot_measured')
-            # servo_jp_1_pub.publish(servo_jp_1_msg)
+            servo_jaw_1_pub.publish(servo_jaw_1_msg)
         else:
-            declutched_pose = None
+            declutched_pose_left = None
+            has_clutched_left = True
 
         if not conData.right_clutch:
-            rot_matrix = quaternion_matrix([-conData.right_rot.x, -conData.right_rot.y, 
-                conData.right_rot.z, conData.right_rot.w])            
-            rot_matrix = rot_matrix @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+            rot_matrix_original = quaternion_matrix([-conData.right_rot.x, -conData.right_rot.y, 
+                conData.right_rot.z, conData.right_rot.w])
+            T_ec = np.array([[np.cos(0.5236), -np.sin(0.5236), 0], [np.sin(0.5236), np.cos(0.5236), 0], [0, 0, 1]])
+            T_ec_h = np.eye(4)
+            T_ec_h[:3, :3] = T_ec
+            rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+            
+            if declutched_pose_right is None and has_clutched_right:
+                print("Setting Pre Transform")
+                declutched_pose_right = rot_matrix
+                current_robot_pose = robRightData.measured_cp.transform.rotation
+                current_robot_pose = quaternion_matrix([current_robot_pose.x, current_robot_pose.y,
+                        current_robot_pose.z, current_robot_pose.w])
+                pre_transform_right = current_robot_pose @ np.linalg.inv(declutched_pose_right)
+
+            print(pre_transform_right)
+            
+            rot_matrix = pre_transform_right @ rot_matrix
+
             rot_quat = quaternion_from_matrix(rot_matrix)
+            rightDelta = T_ec @ np.array(rightDelta)
             servo_cp_2_msg.transform.translation.x -= rightDelta[0]*motion_factor
             servo_cp_2_msg.transform.translation.y -= rightDelta[1]*motion_factor
             servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor
@@ -357,8 +376,14 @@ while not rospy.is_shutdown():
             servo_cp_2_msg.transform.rotation.y = rot_quat[1]
             servo_cp_2_msg.transform.rotation.z = rot_quat[2]
             servo_cp_2_msg.transform.rotation.w = rot_quat[3]
-            servo_jp_2_msg.position = [conData.right_jaw]
-            # servo_cp_2_pub.publish(servo_cp_2_msg)
-            # servo_jp_2_pub.publish(servo_jp_2_msg)
+            servo_jaw_2_msg.position = [conData.right_jaw]
+            servo_cp_2_pub.publish(servo_cp_2_msg)
+            robRot = np.array([robRightData.measured_cp.transform.rotation.x, robRightData.measured_cp.transform.rotation.y, robRightData.measured_cp.transform.rotation.z,
+                               robRightData.measured_cp.transform.rotation.w])
+            # sendTransform(robRightData.measured_cp.transform.translation, robRot, 'robot_measured')
+            servo_jaw_2_pub.publish(servo_jaw_2_msg)
+        else:
+            declutched_pose_right = None
+            has_clutched_right = True
 
     rate.sleep() 
