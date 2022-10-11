@@ -52,7 +52,7 @@ from geometry_msgs.msg import TransformStamped, Transform, TwistStamped
 from PyKDL import Rotation, Vector, Frame
 from argparse import ArgumentParser
 from surgical_robotics_challenge.utils.utilities import get_boolean_from_opt
-
+from surgical_robotics_challenge.camera import *
 
 def rot_mat_to_quat(cp):
     R = Rotation(cp[0, 0], cp[0, 1], cp[0, 2],
@@ -139,6 +139,9 @@ class PSMCRTKWrapper:
         self._measured_cp_msg.header.frame_id = 'baselink'
         self._jaw_angle = 0.5
 
+        self.cam = Camera(client, 'CameraFrame')
+        # print(client.get_obj_names())
+
     def servo_cp_cb(self, cp):
         frame = transform_to_frame(cp.transform)
         self.arm.servo_cp(frame)
@@ -165,6 +168,9 @@ class PSMCRTKWrapper:
         # Set jaw angle and run grasp logic
         self.arm.set_jaw_angle(self._jaw_angle)
         self.arm.run_grasp_logic(self._jaw_angle)
+
+        # Why is camera rotation a wierd matrix?
+        print(self.cam.measured_cp().M)
 
     def publish_cs(self):
         self._measured_cp_msg.transform = np_mat_to_transform(self.arm.measured_cp())

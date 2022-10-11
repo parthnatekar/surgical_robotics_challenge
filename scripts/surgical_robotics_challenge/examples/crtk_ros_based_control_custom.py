@@ -70,6 +70,8 @@ class ControllerData:
         self.right_rot = Quaternion(0.0, 0.0, 0.0, 0.0)
         self.left_clutch = False
         self.right_clutch = False
+        self.left_reset= False
+        self.right_reset = False
         self.left_jaw = 0.0
         self.right_jaw = 0.0
 
@@ -83,19 +85,24 @@ def measured_js_cb(msg, robData):
 def measured_cp_cb(msg, robData):
     robData.measured_cp = msg
 
-def measured_left_pos(msg):
+def measured_left_pos(msg, key=None):
     if isinstance(msg, Vector3):
+        # If new msg > (median + scale*mad), then msg = last value, else msg = msg
+        # print(msg, np.median(np.abs(conData.left_pos - np.median(conData.left_pos))))
         if len(conData.left_pos) > 5:
             conData.left_pos.pop(0)
         conData.left_pos.append(msg)
     elif isinstance(msg, Quaternion):
         conData.left_rot = msg
     elif isinstance(msg, String):
-        conData.left_clutch = True if msg.data == 'True' else False
+        if key.endswith('Clutch'):
+            conData.left_clutch = True if msg.data == 'True' else False
+        elif key.endswith('Reset'):
+            conData.left_reset = True if msg.data == 'True' else False
     elif isinstance(msg, Float32):
         conData.left_jaw = 1-msg.data
 
-def measured_right_pos(msg):
+def measured_right_pos(msg, key=None):
     if isinstance(msg, Vector3):
         if len(conData.right_pos) > 5:
             conData.right_pos.pop(0)
@@ -103,7 +110,10 @@ def measured_right_pos(msg):
     elif isinstance(msg, Quaternion):
         conData.right_rot = msg
     elif isinstance(msg, String):
-        conData.right_clutch = True if msg.data == 'True' else False
+        if key.endswith('Clutch'):
+            conData.right_clutch = True if msg.data == 'True' else False
+        elif key.endswith('Reset'):
+            conData.right_reset = True if msg.data == 'True' else False
     elif isinstance(msg, Float32):
         conData.right_jaw = 1-msg.data
 
@@ -157,9 +167,13 @@ controller_left_sub = rospy.Subscriber(
 controller_right_sub = rospy.Subscriber(
     '/QuestControllerData/rightControllerPosition', Vector3, measured_right_pos, queue_size=1)
 controller_left_clutch = rospy.Subscriber(
-    '/QuestControllerData/leftControllerX', String, measured_left_pos, queue_size=1)
+    '/QuestControllerData/leftControllerX', String, measured_left_pos, callback_args='leftClutch', queue_size=1)
 controller_right_clutch = rospy.Subscriber(
-    '/QuestControllerData/rightControllerX', String, measured_right_pos, queue_size=1)
+    '/QuestControllerData/rightControllerX', String, measured_right_pos, callback_args='rightClutch', queue_size=1)
+controller_left_reset = rospy.Subscriber(
+    '/QuestControllerData/leftControllerY', String, measured_left_pos, callback_args='leftReset', queue_size=1)
+controller_right_reset = rospy.Subscriber(
+    '/QuestControllerData/rightControllerY', String, measured_right_pos, callback_args='rightReset', queue_size=1)
 controller_left_clutch = rospy.Subscriber(
     '/QuestControllerData/leftControllerRotation', Quaternion, measured_left_pos, queue_size=1)
 controller_right_clutch = rospy.Subscriber(
@@ -266,8 +280,11 @@ while not rospy.is_shutdown():
         #     math.sin(rospy.Time.now().to_sec())
         sinusoidal_x = 0.8 * \
             math.cos(rospy.Time.now().to_sec())
-        p_c = np.array([0, sinusoidal_x, -1.])
-        T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
+
+        # Camera Z and Robot Z are not aligned, there must be some other transform
+        # Add another rotation about Z, or just use Z transformation from CameraFrame?
+        p_c = np.array([0, 0, -1+sinusoidal_x])
+        T_ec = np.array([[np.cos(-1.57), -np.sin(-1.57), 0], [np.sin(-1.57), np.cos(-1.57), 0], [0, 0, 1]])
         p_e = T_ec @ p_c
         servo_cp_1_msg.transform.translation.x = p_e[0]
         servo_cp_1_msg.transform.translation.y = p_e[1]
@@ -310,7 +327,7 @@ while not rospy.is_shutdown():
         # conData.right_pos.pop(0)
 
         # print(conData.left_jaw)
-        motion_factor = 0.5
+        motion_factor = 0.3
 
         if not conData.left_clutch:
             rot_matrix_original = quaternion_matrix([-conData.left_rot.x, -conData.left_rot.y, 
@@ -320,6 +337,8 @@ while not rospy.is_shutdown():
             T_ec_h[:3, :3] = T_ec
             rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
             
+            # Is pre_transform cumulative?
+            # There is some OFFSET HAPPENING HERE!
             if declutched_pose_left is None and has_clutched_left == True:
                 declutched_pose_left = rot_matrix
                 current_robot_pose = robLeftData.measured_cp.transform.rotation
@@ -333,6 +352,10 @@ while not rospy.is_shutdown():
             servo_cp_1_msg.transform.translation.x -= leftDelta[0]*motion_factor
             servo_cp_1_msg.transform.translation.y -= leftDelta[1]*motion_factor
             servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
+            # if conData.left_reset:
+            #     R_7_0 = Rotation.RPY(3.14, 0, 1.57)
+            #     rot_quat = R_7_0.GetQuaternion()
+            #     pre_transform_left = np.eye(4)
             servo_cp_1_msg.transform.rotation.x = rot_quat[0]
             servo_cp_1_msg.transform.rotation.y = rot_quat[1]
             servo_cp_1_msg.transform.rotation.z = rot_quat[2]
@@ -356,15 +379,13 @@ while not rospy.is_shutdown():
             rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
             
             if declutched_pose_right is None and has_clutched_right:
-                print("Setting Pre Transform")
                 declutched_pose_right = rot_matrix
                 current_robot_pose = robRightData.measured_cp.transform.rotation
                 current_robot_pose = quaternion_matrix([current_robot_pose.x, current_robot_pose.y,
                         current_robot_pose.z, current_robot_pose.w])
                 pre_transform_right = current_robot_pose @ np.linalg.inv(declutched_pose_right)
-
-            print(pre_transform_right)
             
+            # print(pre_transform_right)
             rot_matrix = pre_transform_right @ rot_matrix
 
             rot_quat = quaternion_from_matrix(rot_matrix)
@@ -372,6 +393,10 @@ while not rospy.is_shutdown():
             servo_cp_2_msg.transform.translation.x -= rightDelta[0]*motion_factor
             servo_cp_2_msg.transform.translation.y -= rightDelta[1]*motion_factor
             servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor
+            # if conData.right_reset:
+            #     R_7_0 = Rotation.RPY(3.14, 0, 1.57)
+            #     rot_quat = R_7_0.GetQuaternion()
+            #     pre_transform_right = np.eye(4)
             servo_cp_2_msg.transform.rotation.x = rot_quat[0]
             servo_cp_2_msg.transform.rotation.y = rot_quat[1]
             servo_cp_2_msg.transform.rotation.z = rot_quat[2]
