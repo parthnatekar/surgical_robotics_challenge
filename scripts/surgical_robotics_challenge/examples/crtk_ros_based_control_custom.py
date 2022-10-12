@@ -281,11 +281,23 @@ while not rospy.is_shutdown():
         sinusoidal_x = 0.8 * \
             math.cos(rospy.Time.now().to_sec())
 
+        # Steps to debug coordintae frames:
+        #   1. Get position of end-effector in base frame from a default state:
+        #   2. Transform that position to the camera frame 
+        #   3. Add 0.01 (so 1 cm) to the point in the camera frame
+        #   4. Transform the new camera point back to th base frame of the robo
+        #   5. Set the the robot position (keep same orientation) the new point and in the visualizer, the ee should move away from the camera
+
         # Camera Z and Robot Z are not aligned, there must be some other transform
         # Add another rotation about Z, or just use Z transformation from CameraFrame?
-        p_c = np.array([0, 0, -1+sinusoidal_x])
-        T_ec = np.array([[np.cos(-1.57), -np.sin(-1.57), 0], [np.sin(-1.57), np.cos(-1.57), 0], [0, 0, 1]])
-        p_e = T_ec @ p_c
+        p_c = np.array([0, 0, -1+sinusoidal_x, 1])
+        cTb = [[0.866025, -0.321376, -0.383039, -1.02672],
+               [0.321375, 0.944651, -0.0659712, 0.15093],
+               [0.38304, -0.0659662, 0.921373, -0.415986],
+               [0, 0, 0, 1]]
+        bTc = np.linalg.inv(cTb)
+        T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
+        p_e = bTc @ p_c
         servo_cp_1_msg.transform.translation.x = p_e[0]
         servo_cp_1_msg.transform.translation.y = p_e[1]
         servo_cp_1_msg.transform.translation.z = p_e[2]

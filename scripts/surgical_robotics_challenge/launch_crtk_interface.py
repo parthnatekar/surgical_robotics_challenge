@@ -170,7 +170,7 @@ class PSMCRTKWrapper:
         self.arm.run_grasp_logic(self._jaw_angle)
 
         # Why is camera rotation a wierd matrix?
-        print(self.cam.measured_cp().M)
+        print(self.arm.get_T_w_b() * self.cam.get_T_c_w())
 
     def publish_cs(self):
         self._measured_cp_msg.transform = np_mat_to_transform(self.arm.measured_cp())
