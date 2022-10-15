@@ -158,17 +158,28 @@ servo_jaw_2_msg = JointState()
 servo_jaw_2_msg.position = [0.]
 
 cTb_left = [[0.866025, -0.321376, -0.383039, -1.02672],
-			   [0.321375, 0.944651, -0.0659712, 0.15093],
-			   [0.38304, -0.0659662, 0.921373, -0.415986],
-			   [0, 0, 0, 1]]
-bTc = np.linalg.inv(cTb_left)  
-p_initial_left = bTc @ np.array([-0.3, 0.2, -1., 1.])
+		    [0.321375, 0.944651, -0.0659712, 0.15093],
+		    [0.38304, -0.0659662, 0.921373, -0.415986],
+		    [0, 0, 0, 1]]
+bTc_left = np.linalg.inv(cTb_left)  
+p_initial_left = bTc_left @ np.array([-0.3, 0.2, -1., 1.])
+
+cTb_right = [[0.866025, 0.321389, 0.383028, 1.02672],
+     		 [-0.32139, 0.944646, -0.0659671, 0.15093],
+    		 [-0.383027, -0.0659721, 0.921378, -0.415986],
+    		 [0, 0, 0, 1]]
+
+bTc_right = np.linalg.inv(cTb_right)  
+p_initial_right = bTc_right @ np.array([0.3, 0.2, -1., 1.])
+
 servo_cp_1_msg = TransformStamped()
 servo_cp_1_msg.transform.translation.x = p_initial_left[0]
 servo_cp_1_msg.transform.translation.y = p_initial_left[1]
 servo_cp_1_msg.transform.translation.z = p_initial_left[2]
 servo_cp_2_msg = TransformStamped()
-servo_cp_2_msg.transform.translation.z = -1.0
+servo_cp_2_msg.transform.translation.x = p_initial_right[0]
+servo_cp_2_msg.transform.translation.y = p_initial_right[1]
+servo_cp_2_msg.transform.translation.z = p_initial_right[2]
 
 R_7_0 = Rotation.RPY(3.14, 0.0, 1.57079)
 
@@ -209,27 +220,19 @@ while not rospy.is_shutdown():
 		leftDelta = (-(conLeftData.pose[0].x - conLeftData.pose[1].x), 
 			-(conLeftData.pose[0].y - conLeftData.pose[1].y),
 			conLeftData.pose[0].z - conLeftData.pose[1].z, 1.)
-		rightDelta = (conRightData.pose[0].x - conRightData.pose[1].x, 
-			conRightData.pose[0].y - conRightData.pose[1].y,
-			conRightData.pose[0].z - conRightData.pose[1].z)
+		rightDelta = (-(conRightData.pose[0].x - conRightData.pose[1].x), 
+			-(conRightData.pose[0].y - conRightData.pose[1].y),
+			conRightData.pose[0].z - conRightData.pose[1].z, 1.)
 
 		motion_factor = 0.3
 
 		if not conLeftData.clutch:
 			rot_matrix_original = quaternion_matrix([-conLeftData.rot.x, -conLeftData.rot.y, 
 				conLeftData.rot.z, conLeftData.rot.w])
-			cTb = [[0.866025, -0.321376, -0.383039, -1.02672],
-			   [0.321375, 0.944651, -0.0659712, 0.15093],
-			   [0.38304, -0.0659662, 0.921373, -0.415986],
-			   [0, 0, 0, 1]]
-			bTc = np.linalg.inv(cTb)  
 			T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
 			T_ec_h = np.eye(4)
 			T_ec_h[:3, :3] = T_ec
-			rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-			sinusoidal_x = 0.8 * math.cos(rospy.Time.now().to_sec())
-			p_c = np.array([0., 0., -1+sinusoidal_x, 1])
-			# leftDelta = np.array([sinusoidal_x*0.05, 0., -0., 1])
+			rot_matrix = bTc_left @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 
 			if declutched_pose_left is None and has_clutched_left == True:
 				declutched_pose_left = rot_matrix
@@ -245,12 +248,10 @@ while not rospy.is_shutdown():
 
 			rot_matrix = pre_transform_left @ rot_matrix
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			leftDelta = bTc[:3, :3] @ np.array(leftDelta)[:-1]
-			p_e = bTc @ p_c
+			leftDelta = bTc_left[:3, :3] @ np.array(leftDelta)[:-1]
 			servo_cp_1_msg.transform.translation.x += leftDelta[0]*motion_factor
 			servo_cp_1_msg.transform.translation.y += leftDelta[1]*motion_factor
 			servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
-			print(leftDelta)
 			servo_cp_1_msg.transform.rotation.x = rot_quat[0]
 			servo_cp_1_msg.transform.rotation.y = rot_quat[1]
 			servo_cp_1_msg.transform.rotation.z = rot_quat[2]
@@ -271,7 +272,7 @@ while not rospy.is_shutdown():
 			T_ec = np.array([[np.cos(0.5236), -np.sin(0.5236), 0], [np.sin(0.5236), np.cos(0.5236), 0], [0, 0, 1]])
 			T_ec_h = np.eye(4)
 			T_ec_h[:3, :3] = T_ec
-			rot_matrix = T_ec_h @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			rot_matrix = bTc_right @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 			
 			if declutched_pose_right is None and has_clutched_right:
 				declutched_pose_right = rot_matrix
@@ -283,9 +284,9 @@ while not rospy.is_shutdown():
 			rot_matrix = pre_transform_right @ rot_matrix
 
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			rightDelta = T_ec @ np.array(rightDelta)
-			servo_cp_2_msg.transform.translation.x -= rightDelta[0]*motion_factor
-			servo_cp_2_msg.transform.translation.y -= rightDelta[1]*motion_factor
+			rightDelta = bTc_right[:3, :3] @ np.array(rightDelta)[:-1]
+			servo_cp_2_msg.transform.translation.x += rightDelta[0]*motion_factor
+			servo_cp_2_msg.transform.translation.y += rightDelta[1]*motion_factor
 			servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor
 
 			servo_cp_2_msg.transform.rotation.x = rot_quat[0]
