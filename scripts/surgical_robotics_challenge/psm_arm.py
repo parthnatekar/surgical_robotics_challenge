@@ -173,7 +173,7 @@ class PSM:
         ik_solution = compute_IK(T_t_b)
         self._ik_solution = enforce_limits(ik_solution)
         T_7_0_computed = compute_FK(self._ik_solution + [0.])
-        # sendTransform(T_7_0_computed[:3, 3], T_7_0_computed)
+        sendTransform(T_7_0_computed[:3, 3], T_7_0_computed)
         self.servo_jp(ik_solution)
         # print(T_t_b.p, self._ik_solution[0])
 
