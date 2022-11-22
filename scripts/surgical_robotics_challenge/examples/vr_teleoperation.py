@@ -66,9 +66,22 @@ class ControllerData:
 		self.jaw = 0.0
 
 	def set_pose(self, pose):
+		# if len(self.pose) > 1:
+		# 	if np.linalg.norm(np.array([pose.x, pose.y, pose.z]) - \
+		# 		np.array([self.pose[-1].x, self.pose[-1].y, self.pose[-1].z])) > 0.05:
+		# 		print(np.linalg.norm(np.array([pose.x, pose.y, pose.z]) - \
+		# 			np.array([self.pose[-1].x, self.pose[-1].y, self.pose[-1].z])))
+		# 		pose = self.pose[-1]
+		# pose = self.filter_pose(pose)
 		if len(self.pose) > 5:
 			self.pose.pop(0)
 		self.pose.append(pose)
+
+	def filter_pose(self, pose, alpha=0.95):
+		pose.x = alpha*pose.x + (1-alpha)*self.pose[-1].x
+		pose.y = alpha*pose.y + (1-alpha)*self.pose[-1].y
+		pose.z = alpha*pose.z + (1-alpha)*self.pose[-1].z
+		return pose
 
 	def set_rot(self, rot):
 		self.rot = rot
@@ -157,12 +170,12 @@ servo_jaw_1_msg.position = [0.]
 servo_jaw_2_msg = JointState()
 servo_jaw_2_msg.position = [0.]
 
-cTb_left = [[0.866025, -0.321376, -0.383039, -1.02672],
+cTb_left = np.array([[0.866025, -0.321376, -0.383039, -1.02672],
 		    [0.321375, 0.944651, -0.0659712, 0.15093],
 		    [0.38304, -0.0659662, 0.921373, -0.415986],
-		    [0, 0, 0, 1]]
+		    [0, 0, 0, 1]])
 bTc_left = np.linalg.inv(cTb_left)  
-p_initial_left = bTc_left @ np.array([-0.3, 0.2, -1., 1.])
+p_initial_left = bTc_left @ np.array([-0.3, 0.2, -1.1, 1.])
 
 cTb_right = [[0.866025, 0.321389, 0.383028, 1.02672],
      		 [-0.32139, 0.944646, -0.0659671, 0.15093],
@@ -199,6 +212,8 @@ has_clutched_left = False
 has_clutched_right = False
 pre_transform_left = np.eye(4)
 pre_transform_right = np.eye(4)
+natural_robot_pose_matrix = None
+initial_pose_matrix = None
 
 valid_key = False
 key = None
@@ -217,28 +232,37 @@ while not rospy.is_shutdown():
 	if key == 0:
 		if conLeftData.pose[0].x == 0. or conRightData.pose[0].x == 0.:
 			continue
-		leftDelta = (-(conLeftData.pose[0].x - conLeftData.pose[1].x), 
-			-(conLeftData.pose[0].y - conLeftData.pose[1].y),
-			conLeftData.pose[0].z - conLeftData.pose[1].z, 1.)
-		rightDelta = (-(conRightData.pose[0].x - conRightData.pose[1].x), 
-			-(conRightData.pose[0].y - conRightData.pose[1].y),
-			conRightData.pose[0].z - conRightData.pose[1].z, 1.)
+		leftDelta = (conLeftData.pose[1].x - conLeftData.pose[0].x, 
+			conLeftData.pose[1].y - conLeftData.pose[0].y,
+			conLeftData.pose[1].z - conLeftData.pose[0].z, 1.)
+		rightDelta = (conRightData.pose[1].x - conRightData.pose[0].x, 
+			conRightData.pose[1].y - conRightData.pose[0].y,
+			conRightData.pose[1].z - conRightData.pose[0].z, 1.)
 
 		motion_factor = 0.3
 
 		if not conLeftData.clutch:
-			rot_matrix_original = quaternion_matrix([-conLeftData.rot.x, -conLeftData.rot.y, 
+			rot_matrix_original = quaternion_matrix([conLeftData.rot.x, conLeftData.rot.y, 
 				conLeftData.rot.z, conLeftData.rot.w])
-			T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
-			T_ec_h = np.eye(4)
-			T_ec_h[:3, :3] = T_ec
-			rot_matrix = bTc_left @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-
-			if declutched_pose_left is None and has_clutched_left == True:
+			# rot_matrix_original should be o_R_h 
+			# That way the coordinate transform chain is:
+			#		b_R_c * c_R_o * o_R_h * h_R_e = b_R_e
+			# Another check, does the sim want b_R_e or e_R_b. Probably b_R_e
+			# print(rot_matrix_original)
+			if natural_robot_pose_matrix is None:
+				natural_robot_pose_matrix = np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]) @ np.linalg.inv(rot_matrix_original)
+			# rot_matrix = bTc_left @ natural_robot_pose_matrix @ rot_matrix_original
+			cRo =  np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			hRe = np.array([[0, 0, -1, 0], [1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]])
+			rot_matrix = bTc_left @ rot_matrix_original
+			# p_c = np.array([0., sinusoidal_x, -1, 1])
+			# print(leftDelta)
+			if declutched_pose_left is None and has_clutched_left:
 				declutched_pose_left = rot_matrix
 				current_robot_pose = robLeftData.measured_cp.transform.rotation
 				current_robot_pose = quaternion_matrix([current_robot_pose.x, current_robot_pose.y,
 						current_robot_pose.z, current_robot_pose.w])
+				# print(current_robot_pose)
 				pre_transform_left = current_robot_pose @ np.linalg.inv(declutched_pose_left)
 				try:
 					print(np.linalg.inv(current_robot_pose) @ prev_robot_pose)
@@ -248,7 +272,7 @@ while not rospy.is_shutdown():
 
 			rot_matrix = pre_transform_left @ rot_matrix
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			leftDelta = bTc_left[:3, :3] @ np.array(leftDelta)[:-1]
+			leftDelta = bTc_left[:3, :3] @ cRo[:3, :3] @ np.array(leftDelta)[:-1]
 			servo_cp_1_msg.transform.translation.x += leftDelta[0]*motion_factor
 			servo_cp_1_msg.transform.translation.y += leftDelta[1]*motion_factor
 			servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
@@ -260,6 +284,7 @@ while not rospy.is_shutdown():
 			servo_cp_1_pub.publish(servo_cp_1_msg)
 			robRot = np.array([robLeftData.measured_cp.transform.rotation.x, robLeftData.measured_cp.transform.rotation.y, robLeftData.measured_cp.transform.rotation.z,
 							   robLeftData.measured_cp.transform.rotation.w])
+			# print(quaternion_matrix(robRot))
 			sendTransform(robLeftData.measured_cp.transform.translation, robRot, 'robot_measured')
 			servo_jaw_1_pub.publish(servo_jaw_1_msg)
 		else:
@@ -267,13 +292,24 @@ while not rospy.is_shutdown():
 			has_clutched_left = True
 
 		if not conRightData.clutch:
-			rot_matrix_original = quaternion_matrix([-conRightData.rot.x, -conRightData.rot.y, 
+			rot_matrix_original = quaternion_matrix([conRightData.rot.x, conRightData.rot.y, 
 				conRightData.rot.z, conRightData.rot.w])
-			T_ec = np.array([[np.cos(0.5236), -np.sin(0.5236), 0], [np.sin(0.5236), np.cos(0.5236), 0], [0, 0, 1]])
-			T_ec_h = np.eye(4)
-			T_ec_h[:3, :3] = T_ec
-			rot_matrix = bTc_right @ rot_matrix_original @ np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-			
+			# if initial_pose_matrix is None:
+			# 	offset = np.array([[ 0.51055143, -0.59905804, -0.6168194,   0.],
+			# 	 [-0.84867822, -0.46633213, -0.24956031,  0.],
+			# 	 [-0.13814163,  0.65089494, -0.7464939,   0.],
+			# 	 [ 0.,          0.,          0.,          1.]])
+			# 	initial_pose_matrix = rot_matrix_original @ np.linalg.inv(offset)
+
+			# rot_matrix_original = offset @ rot_matrix_original
+			cRo = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			cRo_R = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
+			hRe = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			rot_matrix = bTc_right @ rot_matrix_original @ np.array([[0, 1, 0, 0], [0, 0, -1, 0], [-1, 0, 0, 0], [0, 0, 0, 1]])
+
+			rot_matrix[:, 3] = np.array([0, 0, 0, 1])
+
+			print(rot_matrix)
 			if declutched_pose_right is None and has_clutched_right:
 				declutched_pose_right = rot_matrix
 				current_robot_pose = robRightData.measured_cp.transform.rotation
@@ -284,7 +320,7 @@ while not rospy.is_shutdown():
 			rot_matrix = pre_transform_right @ rot_matrix
 
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			rightDelta = bTc_right[:3, :3] @ np.array(rightDelta)[:-1]
+			rightDelta = bTc_right[:3, :3] @ cRo[:3, :3] @ np.array(rightDelta)[:-1]
 			servo_cp_2_msg.transform.translation.x += rightDelta[0]*motion_factor
 			servo_cp_2_msg.transform.translation.y += rightDelta[1]*motion_factor
 			servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor

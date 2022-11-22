@@ -200,9 +200,9 @@ servo_cp_1_msg.transform.translation.x = -0.3
 servo_cp_1_msg.transform.translation.y = 0.1
 servo_cp_1_msg.transform.translation.z = -0.89
 servo_cp_2_msg = TransformStamped()
-servo_cp_2_msg.transform.translation.x = -0.3
-servo_cp_2_msg.transform.translation.y = 0.1
-servo_cp_2_msg.transform.translation.z = -0.89
+servo_cp_2_msg.transform.translation.x = 0.
+servo_cp_2_msg.transform.translation.y = 0.
+servo_cp_2_msg.transform.translation.z = -1
 
 R_7_0 = Rotation.RPY(3.14, 0.0, 1.57079)
 
@@ -294,13 +294,17 @@ while not rospy.is_shutdown():
 
         # Camera Z and Robot Z are not aligned, there must be some other transform
         # Add another rotation about Z, or just use Z transformation from CameraFrame?
-        p_c = np.array([0., 0., -1+sinusoidal_x, 1])
+        p_c = np.array([0., sinusoidal_x, -1, 1])
         cTb = np.array([[0.866025, -0.321376, -0.383039, -1.02672],
                [0.321375, 0.944651, -0.0659712, 0.15093],
                [0.38304, -0.0659662, 0.921373, -0.415986],
                [0, 0, 0, 1]])
         bTc = np.linalg.inv(cTb)
-        T_ec = np.array([[np.cos(-0.5236), -np.sin(-0.5236), 0], [np.sin(-0.5236), np.cos(-0.5236), 0], [0, 0, 1]])
+        cTo = np.array([[np.cos(-3.1416), -np.sin(-3.1416), 0., 0.], [np.sin(-3.1416), np.cos(-3.1416), 0., 0.], [0., 0., 1., 0.], 
+                         [0., 0., 0., 1.]]) @\
+              np.array([[1., 0., 0., 0.], [0., np.cos(0.6981), -np.sin(0.6981), 0.], [0, np.sin(0.6981), np.cos(0.6981), 0.], 
+                         [0., 0., 0., 1.]])
+        print(cTo)
         p_e = bTc @ p_c
         servo_cp_1_msg.transform.translation.x = p_e[0]
         servo_cp_1_msg.transform.translation.y = p_e[1]
