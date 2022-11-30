@@ -139,7 +139,7 @@ class PSMCRTKWrapper:
         self._measured_cp_msg.header.frame_id = 'baselink'
         self._jaw_angle = 0.5
 
-        self.cam = Camera(client, 'CameraFrame')
+        self.cam = Camera(client, 'cameraL')
         # print(client.get_obj_names())
 
     def servo_cp_cb(self, cp):

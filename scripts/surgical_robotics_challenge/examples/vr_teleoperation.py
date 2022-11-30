@@ -10,6 +10,10 @@ import numpy as np
 from scipy.spatial.transform import Rotation as sc_Rotation
 import tf
 from tf.transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix, quaternion_from_matrix
+from ambf_client import Client
+from surgical_robotics_challenge.camera import *
+from surgical_robotics_challenge.psm_arm import PSM
+from surgical_robotics_challenge.ecm_arm import ECM
 
 # Function for sending transform to rviz for visualization
 def sendTransform(position, rotation, jointpos = None, name='robot_left_pre_ik'):
@@ -25,6 +29,7 @@ def sendTransform(position, rotation, jointpos = None, name='robot_left_pre_ik')
 rospy.init_node("sur_chal_crtk_test")
 
 # Define ambf topic names
+client = Client("ambf_surgical_sim_crtk_node")
 namespace = "/CRTK/"
 arm_1_name = "psm1"
 measured_js_1_name = namespace + arm_1_name + "/measured_js"
@@ -38,6 +43,11 @@ measured_cp_2_name = namespace + arm_2_name + "/measured_cp"
 servo_jp_2_name = namespace + arm_2_name + "/servo_jp"
 servo_jp_2_jaw_name = namespace + arm_2_name + "/jaw/servo_jp"
 servo_cp_2_name = namespace + arm_2_name + "/servo_cp"
+
+c = Client(client)
+c.connect()
+
+# print(c.get_obj_names())
 
 # Define classes for interfacing with the robot and VR headset
 class RobotData:
@@ -175,7 +185,6 @@ cTb_left = np.array([[0.866025, -0.321376, -0.383039, -1.02672],
 		    [0.38304, -0.0659662, 0.921373, -0.415986],
 		    [0, 0, 0, 1]])
 bTc_left = np.linalg.inv(cTb_left)  
-p_initial_left = bTc_left @ np.array([-0.3, 0.2, -1.1, 1.])
 
 cTb_right = [[0.866025, 0.321389, 0.383028, 1.02672],
      		 [-0.32139, 0.944646, -0.0659671, 0.15093],
@@ -183,6 +192,28 @@ cTb_right = [[0.866025, 0.321389, 0.383028, 1.02672],
     		 [0, 0, 0, 1]]
 
 bTc_right = np.linalg.inv(cTb_right)  
+
+# This gives the right matrices, but messes up something else?
+# cam1 = Camera(c, 'CameraFrame')
+# psm1 = PSM(c, 'psm1', add_joint_errors=False)
+# bTc_right = psm1.get_T_w_b() * cam1.get_T_c_w()
+# bTc_right = np.linalg.inv(np.array([[bTc_right.M[0, 0], bTc_right.M[0, 1], bTc_right.M[0, 2], bTc_right.p[0]],
+# 				[bTc_right.M[1, 0], bTc_right.M[1, 1], bTc_right.M[1, 2], bTc_right.p[1]],
+# 				[bTc_right.M[2, 0], bTc_right.M[2, 1], bTc_right.M[2, 2], bTc_right.p[2]],
+# 				[0., 0., 0., 1.]]))
+# cam2 = Camera(c, 'CameraFrame')
+# psm2 = PSM(c, 'psm2', add_joint_errors=False)
+
+# bTc_left = psm2.get_T_w_b() * cam2.get_T_c_w()
+# bTc_left = np.linalg.inv(np.array([[bTc_left.M[0, 0], bTc_left.M[0, 1], bTc_left.M[0, 2], bTc_left.p[0]],
+# 				[bTc_left.M[1, 0], bTc_left.M[1, 1], bTc_left.M[1, 2], bTc_left.p[1]],
+# 				[bTc_left.M[2, 0], bTc_left.M[2, 1], bTc_left.M[2, 2], bTc_left.p[2]],
+# 				[0., 0., 0., 1.]]))
+
+print(bTc_right)
+
+p_initial_left = bTc_left @ np.array([-0.3, 0.2, -1.1, 1.])
+
 p_initial_right = bTc_right @ np.array([0.3, 0.2, -1., 1.])
 
 servo_cp_1_msg = TransformStamped()
@@ -252,9 +283,10 @@ while not rospy.is_shutdown():
 			if natural_robot_pose_matrix is None:
 				natural_robot_pose_matrix = np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]]) @ np.linalg.inv(rot_matrix_original)
 			# rot_matrix = bTc_left @ natural_robot_pose_matrix @ rot_matrix_original
-			cRo =  np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-			hRe = np.array([[0, 0, -1, 0], [1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]])
-			rot_matrix = bTc_left @ rot_matrix_original
+			uRo =  np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			cRu =  np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+			hRe = np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+			rot_matrix = bTc_left @ cRu @ uRo @ rot_matrix_original @ hRe
 			# p_c = np.array([0., sinusoidal_x, -1, 1])
 			# print(leftDelta)
 			if declutched_pose_left is None and has_clutched_left:
@@ -272,7 +304,7 @@ while not rospy.is_shutdown():
 
 			rot_matrix = pre_transform_left @ rot_matrix
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			leftDelta = bTc_left[:3, :3] @ cRo[:3, :3] @ np.array(leftDelta)[:-1]
+			leftDelta = bTc_left[:3, :3] @ uRo[:3, :3] @ np.array(leftDelta)[:-1]
 			servo_cp_1_msg.transform.translation.x += leftDelta[0]*motion_factor
 			servo_cp_1_msg.transform.translation.y += leftDelta[1]*motion_factor
 			servo_cp_1_msg.transform.translation.z += leftDelta[2]*motion_factor
@@ -285,7 +317,7 @@ while not rospy.is_shutdown():
 			robRot = np.array([robLeftData.measured_cp.transform.rotation.x, robLeftData.measured_cp.transform.rotation.y, robLeftData.measured_cp.transform.rotation.z,
 							   robLeftData.measured_cp.transform.rotation.w])
 			# print(quaternion_matrix(robRot))
-			sendTransform(robLeftData.measured_cp.transform.translation, robRot, 'robot_measured')
+			# sendTransform(robLeftData.measured_cp.transform.translation, robRot, 'robot_measured')
 			servo_jaw_1_pub.publish(servo_jaw_1_msg)
 		else:
 			declutched_pose_left = None
@@ -302,14 +334,13 @@ while not rospy.is_shutdown():
 			# 	initial_pose_matrix = rot_matrix_original @ np.linalg.inv(offset)
 
 			# rot_matrix_original = offset @ rot_matrix_original
-			cRo = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-			cRo_R = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
-			hRe = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
-			rot_matrix = bTc_right @ rot_matrix_original @ np.array([[0, 1, 0, 0], [0, 0, -1, 0], [-1, 0, 0, 0], [0, 0, 0, 1]])
+			uRo =  np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
+			cRu =  np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+			hRe = np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]])
+			rot_matrix = bTc_right @ cRu @ uRo @ rot_matrix_original #@ hRe
 
 			rot_matrix[:, 3] = np.array([0, 0, 0, 1])
 
-			print(rot_matrix)
 			if declutched_pose_right is None and has_clutched_right:
 				declutched_pose_right = rot_matrix
 				current_robot_pose = robRightData.measured_cp.transform.rotation
@@ -320,7 +351,7 @@ while not rospy.is_shutdown():
 			rot_matrix = pre_transform_right @ rot_matrix
 
 			rot_quat = quaternion_from_matrix(rot_matrix)
-			rightDelta = bTc_right[:3, :3] @ cRo[:3, :3] @ np.array(rightDelta)[:-1]
+			rightDelta = bTc_right[:3, :3] @ uRo[:3, :3] @ np.array(rightDelta)[:-1]
 			servo_cp_2_msg.transform.translation.x += rightDelta[0]*motion_factor
 			servo_cp_2_msg.transform.translation.y += rightDelta[1]*motion_factor
 			servo_cp_2_msg.transform.translation.z += rightDelta[2]*motion_factor
@@ -333,7 +364,7 @@ while not rospy.is_shutdown():
 			servo_cp_2_pub.publish(servo_cp_2_msg)
 			robRot = np.array([robRightData.measured_cp.transform.rotation.x, robRightData.measured_cp.transform.rotation.y, robRightData.measured_cp.transform.rotation.z,
 							   robRightData.measured_cp.transform.rotation.w])
-			# sendTransform(robRightData.measured_cp.transform.translation, robRot, 'robot_measured')
+			sendTransform(robRightData.measured_cp.transform.translation, robRot, 'robot_measured')
 			servo_jaw_2_pub.publish(servo_jaw_2_msg)
 		else:
 			declutched_pose_right = None
